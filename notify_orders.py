@@ -10,24 +10,34 @@ import urllib.parse
 import urllib.error
 import os
 
-# ── настройки ──────────────────────────────────────────────────────────────
-RETAILCRM_URL  = "https://zaqcount2.retailcrm.ru/api/v5"
-RETAILCRM_KEY  = "lU2gcKVfoscEeL3fi6wRRJqCBZ7p8ahJ"
-RETAILCRM_SITE = "zaqcount2"
+def load_env(path=None):
+    if path is None:
+        path = os.path.join(os.path.dirname(__file__), ".env")
+    env = {}
+    try:
+        with open(path) as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    k, v = line.split("=", 1)
+                    env[k.strip()] = v.strip()
+    except FileNotFoundError:
+        pass
+    return env
 
-SUPABASE_URL = "https://plifwqwdkkfjwyuriglj.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBsaWZ3cXdka2tmand5dXJpZ2xqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYxMDAyMjgsImV4cCI6MjA5MTY3NjIyOH0.KgLLtyqpg9NVkm6ukB2qakNWq5RVuGBxKE7GvedQp6I"
+_env = load_env()
 
-TG_TOKEN   = "8616255409:AAHTFNE_HI8h238XzIJLLas2kDWcWT8vzyc"
-TG_CHAT_ID = "1085936541"
+RETAILCRM_URL  = os.getenv("RETAILCRM_URL",  _env.get("RETAILCRM_URL"))
+RETAILCRM_KEY  = os.getenv("RETAILCRM_KEY",  _env.get("RETAILCRM_KEY"))
+RETAILCRM_SITE = os.getenv("RETAILCRM_SITE", _env.get("RETAILCRM_SITE"))
+TG_TOKEN       = os.getenv("TG_TOKEN",       _env.get("TG_TOKEN"))
+TG_CHAT_ID     = os.getenv("TG_CHAT_ID",     _env.get("TG_CHAT_ID"))
 
-THRESHOLD  = 50_000   # ₸
+THRESHOLD  = 50_000
 STATE_FILE = os.path.join(os.path.dirname(__file__), ".last_order_id")
-# ───────────────────────────────────────────────────────────────────────────
 
 
 def get_last_seen_id() -> int:
-    """Читаем последний обработанный ID заказа из файла."""
     try:
         with open(STATE_FILE) as f:
             return int(f.read().strip())
@@ -41,7 +51,6 @@ def save_last_seen_id(order_id: int) -> None:
 
 
 def fetch_recent_orders() -> list[dict]:
-    """Получаем последнюю страницу заказов из RetailCRM."""
     params = urllib.parse.urlencode({
         "apiKey": RETAILCRM_KEY,
         "site":   RETAILCRM_SITE,
@@ -68,9 +77,10 @@ def send_telegram(text: str) -> None:
 
 
 def format_items(items: list[dict]) -> str:
-    lines = []
-    for item in items:
-        lines.append(f"  • {item.get('offer', {}).get('displayName', '—')} × {item.get('quantity', 1)}")
+    lines = [
+        f"  • {item.get('offer', {}).get('displayName', '—')} × {item.get('quantity', 1)}"
+        for item in items
+    ]
     return "\n".join(lines) if lines else "  —"
 
 
@@ -78,7 +88,6 @@ def main():
     last_id = get_last_seen_id()
     orders  = fetch_recent_orders()
 
-    # сортируем по id, берём только новые
     new_orders = sorted(
         [o for o in orders if o["id"] > last_id],
         key=lambda o: o["id"]

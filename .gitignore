@@ -1,3 +1,4 @@
+.env
 .last_order_id
 dashboard/.vercel/
 __pycache__/

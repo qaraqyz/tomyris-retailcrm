@@ -7,15 +7,28 @@ import json
 import urllib.request
 import urllib.parse
 import urllib.error
+import os
 
-# ── настройки ──────────────────────────────────────────────────────────────
-RETAILCRM_URL = "https://zaqcount2.retailcrm.ru/api/v5"
-RETAILCRM_KEY = "lU2gcKVfoscEeL3fi6wRRJqCBZ7p8ahJ"
-RETAILCRM_SITE = "zaqcount2"
+def load_env(path=".env"):
+    env = {}
+    try:
+        with open(path) as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    k, v = line.split("=", 1)
+                    env[k.strip()] = v.strip()
+    except FileNotFoundError:
+        pass
+    return env
 
-SUPABASE_URL  = "https://plifwqwdkkfjwyuriglj.supabase.co"
-SUPABASE_KEY  = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBsaWZ3cXdka2tmand5dXJpZ2xqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYxMDAyMjgsImV4cCI6MjA5MTY3NjIyOH0.KgLLtyqpg9NVkm6ukB2qakNWq5RVuGBxKE7GvedQp6I"
-# ───────────────────────────────────────────────────────────────────────────
+_env = load_env()
+
+RETAILCRM_URL  = os.getenv("RETAILCRM_URL",  _env.get("RETAILCRM_URL"))
+RETAILCRM_KEY  = os.getenv("RETAILCRM_KEY",  _env.get("RETAILCRM_KEY"))
+RETAILCRM_SITE = os.getenv("RETAILCRM_SITE", _env.get("RETAILCRM_SITE"))
+SUPABASE_URL   = os.getenv("SUPABASE_URL",   _env.get("SUPABASE_URL"))
+SUPABASE_KEY   = os.getenv("SUPABASE_KEY",   _env.get("SUPABASE_KEY"))
 
 
 def fetch_orders_page(page: int) -> dict:
@@ -34,9 +47,9 @@ def fetch_all_orders() -> list[dict]:
     orders = []
     page = 1
     while True:
-        data        = fetch_orders_page(page)
-        batch       = data.get("orders", [])
-        pagination  = data.get("pagination", {})
+        data       = fetch_orders_page(page)
+        batch      = data.get("orders", [])
+        pagination = data.get("pagination", {})
         orders.extend(batch)
         print(f"  страница {page}: получено {len(batch)} заказов "
               f"(всего {pagination.get('totalCount', '?')})")
@@ -49,11 +62,11 @@ def fetch_all_orders() -> list[dict]:
 def transform(order: dict) -> dict:
     items = [
         {
-            "id":          item.get("id"),
-            "product":     item.get("offer", {}).get("displayName"),
-            "quantity":    item.get("quantity"),
-            "price":       item.get("initialPrice"),
-            "total":       item.get("initialPrice", 0) * item.get("quantity", 1),
+            "id":       item.get("id"),
+            "product":  item.get("offer", {}).get("displayName"),
+            "quantity": item.get("quantity"),
+            "price":    item.get("initialPrice"),
+            "total":    item.get("initialPrice", 0) * item.get("quantity", 1),
         }
         for item in order.get("items", [])
     ]
@@ -91,10 +104,10 @@ def upsert_to_supabase(rows: list[dict]) -> None:
     url  = f"{SUPABASE_URL}/rest/v1/orders"
     body = json.dumps(rows, ensure_ascii=False).encode("utf-8")
     req  = urllib.request.Request(url, data=body, method="POST")
-    req.add_header("apikey",       SUPABASE_KEY)
+    req.add_header("apikey",        SUPABASE_KEY)
     req.add_header("Authorization", f"Bearer {SUPABASE_KEY}")
-    req.add_header("Content-Type", "application/json")
-    req.add_header("Prefer",       "resolution=merge-duplicates")
+    req.add_header("Content-Type",  "application/json")
+    req.add_header("Prefer",        "resolution=merge-duplicates")
 
     try:
         with urllib.request.urlopen(req, timeout=15) as r:
@@ -113,7 +126,6 @@ def main():
     rows = [transform(o) for o in orders]
 
     print("3. Загружаем в Supabase (upsert)...")
-    # загружаем пачками по 50, чтобы не упереться в лимит запроса
     batch_size = 50
     for i in range(0, len(rows), batch_size):
         batch = rows[i:i + batch_size]
